@@ -24,7 +24,7 @@ const OrderBy = Object.freeze({
 
 module.exports.routes = (server, catboxClient, internals) => {
 
-    const CACHE_TIME = 120000;  // catbox cache ttl
+    const CACHE_TIME = 999999999;   // catbox cache ttl (simulating db)
     let catboxKeyIds = [];
 
 
@@ -104,19 +104,25 @@ module.exports.routes = (server, catboxClient, internals) => {
         method: 'GET',
         path: '/todos',
         options: {
+            auth: {
+                mode: 'required'
+            },
             handler: async (request, reply) => {
                 try {
                     let response = {
                         todos: []
                     };
+                    const userId = request.auth.credentials.id;
                     await Promise.resolve(catboxKeyIds.map(
                         async (keyId) => {
-                            const catboxResult = await catboxClient.get({
-                                id: keyId,
-                                segment: 'todos'
-                            });
-                            catboxResult.item.description = catboxResult.item.description;
-                            response.todos.push(catboxResult.item);
+                            const keyUserId = keyId.slice(0, keyId.indexOf('_'));
+                            if (keyUserId == userId) {
+                                const catboxResult = await catboxClient.get({
+                                    id: keyId,
+                                    segment: 'todos'
+                                });
+                                response.todos.push(catboxResult.item.todo);
+                            }
                         }
                     ));
                     response.todos = filterTodos(
@@ -151,22 +157,28 @@ module.exports.routes = (server, catboxClient, internals) => {
         method: 'PUT',
         path: '/todos',
         options: {
+            auth: {
+                mode: 'required'
+            },
             handler: async (request, reply) => {
                 try {
                     const newTodo = {
-                        id: getNextId(),
-                        description: request.payload.description.trim(),
-                        state: State.INCOMPLETE,
-                        dateAdded: new Date()
+                        userId: request.auth.credentials.id,
+                        todo: {
+                            id: getNextId(),
+                            description: request.payload.description.trim(),
+                            state: State.INCOMPLETE,
+                            dateAdded: new Date()
+                        }
                     };
-                    const newKeyId = newTodo.id.toString();
+                    const newKeyId = `${newTodo.userId}_${newTodo.todo.id}`; //newTodo.todo.id.toString();
                     catboxKeyIds.push(newKeyId);
                     const key = {
                         id: newKeyId,
                         segment: 'todos'
                     };
                     await catboxClient.set(key, newTodo, CACHE_TIME);
-                    return newTodo;
+                    return newTodo.todo;
                 } catch (err) {
                     console.error(err);
                     return {};
@@ -184,9 +196,14 @@ module.exports.routes = (server, catboxClient, internals) => {
         method: 'PATCH',
         path: '/todo/{id}',
         options: {
+            auth: {
+                mode: 'required'
+            },
             handler: async (request, reply) => {
                 try {
-                    const keyId = request.params.id.toString();
+                    const userId = request.auth.credentials.id;
+                    const todoId = request.params.id;
+                    const keyId = `${userId}_${todoId}`; //request.params.id.toString();
                     const key = {
                         id: keyId,
                         segment: 'todos'
@@ -194,21 +211,24 @@ module.exports.routes = (server, catboxClient, internals) => {
                     const catboxResult = await catboxClient.get(key);
 
                     if (!catboxResult) {
-                        console.error(`There is no todo with id ${keyId}.`);
+                        console.error(`There is no todo with id ${request.params.id}.`);
                         return reply.response('404 Error! Page Not Found!').code(404);
-                    } else if (catboxResult.item.state === State.COMPLETE) {
+                    } else if (catboxResult.item.todo.state === State.COMPLETE) {
                         console.error('State is already "Complete"');
                         return reply.response('State is already "Complete"').code(400);
                     }
 
                     const updatedTodo = {
-                        id: request.params.id,
-                        state: (result.state) ? result.state : catboxResult.item.state,
-                        description: (result.description) ? result.description : catboxResult.item.description,
-                        dateAdded: catboxResult.item.dateAdded
+                        userId: userId,
+                        todo: {
+                            id: todoId,
+                            state: (request.payload.state) ? request.payload.state : catboxResult.item.todo.state,
+                            description: (request.payload.description) ? request.payload.description : catboxResult.item.todo.description,
+                            dateAdded: catboxResult.item.todo.dateAdded
+                        }
                     };
                     await catboxClient.set(key, updatedTodo, CACHE_TIME);
-                    return updatedTodo;
+                    return updatedTodo.todo;
                 } catch (err) {
                     console.error(err);
                     return reply.response({}).code(500);
@@ -230,9 +250,13 @@ module.exports.routes = (server, catboxClient, internals) => {
         method: 'DELETE',
         path: '/todo/{id}',
         options: {
+            auth: {
+                mode: 'required'
+            },
             handler: async (request, reply) => {
                 try {
-                    const keyId = request.params.id.toString();
+                    const todoId = request.params.id;
+                    const keyId = `${request.auth.credentials.id}_${todoId}`; //request.params.id.toString();
                     const index = catboxKeyIds.indexOf(keyId);
                     if (index !== -1) {
                         catboxKeyIds.splice(index, 1);
@@ -243,7 +267,7 @@ module.exports.routes = (server, catboxClient, internals) => {
                         await catboxClient.drop(key);
                         return {};
                     } else {
-                        throw `There is no todo with id ${keyId}.`;
+                        throw `There is no todo with id ${todoId}.`;
                     }
                 } catch (err) {
                     console.error(err);
