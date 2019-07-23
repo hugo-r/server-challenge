@@ -1,0 +1,21 @@
+{
+  "name": "server-challenge",
+  "version": "1.0.0",
+  "description": "elecctro server challenge",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "author": "hugo carreira",
+  "license": "ISC",
+  "dependencies": {
+    "@hapi/catbox": "^10.2.1",
+    "@hapi/catbox-memory": "^4.1.0",
+    "@hapi/cookie": "^10.1.0",
+    "@hapi/hapi": "^18.3.1",
+    "@hapi/inert": "^5.2.1",
+    "@hapi/joi": "^15.1.0",
+    "@hapi/vision": "^5.5.2",
+    "lout": "^11.2.3"
+  }
+}
